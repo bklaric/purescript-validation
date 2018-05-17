@@ -20,9 +20,8 @@ import Control.Apply (lift2)
 import Control.Plus (class Plus)
 import Data.Bifunctor (class Bifunctor)
 import Data.Either (Either(..))
-import Data.Eq (class Eq1)
 import Data.Foldable (class Foldable)
-import Data.Ord (class Ord1)
+import Data.Monoid (class Monoid, mempty)
 import Data.Traversable (class Traversable)
 
 -- | The `V` functor, used for alternative validation
@@ -62,10 +61,8 @@ toEither :: forall err result. V err result -> Either err result
 toEither (V e) = e
 
 derive instance eqV :: (Eq err, Eq result) => Eq (V err result)
-derive instance eq1V :: Eq err => Eq1 (V err)
 
 derive instance ordV :: (Ord err, Ord result) => Ord (V err result)
-derive instance ord1V :: Ord err => Ord1 (V err)
 
 instance showV :: (Show err, Show result) => Show (V err result) where
   show = case _ of
