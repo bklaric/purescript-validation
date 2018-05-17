@@ -9,12 +9,14 @@ module Data.Validation.Semigroup
   , unV
   , invalid
   , isValid
+  , toEither
   ) where
 
 import Prelude
 
 import Control.Apply (lift2)
 import Data.Bifunctor (class Bifunctor)
+import Data.Either (Either(..))
 import Data.Foldable (class Foldable)
 import Data.Monoid (class Monoid, mempty)
 import Data.Traversable (class Traversable)
@@ -33,47 +35,51 @@ import Data.Traversable (class Traversable)
 -- |   <*> validateName person.last
 -- |   <*> validateEmail person.email
 -- | ```
-data V err result = Invalid err | Valid result
+newtype V err result = V (Either err result)
 
 -- | Unpack the `V` type constructor, providing functions to handle the error
 -- | and success cases.
 unV :: forall err result r. (err -> r) -> (result -> r) -> V err result -> r
-unV f _ (Invalid err) = f err
-unV _ g (Valid result) = g result
+unV f _ (V (Left err)) = f err
+unV _ g (V (Right result)) = g result
 
--- | Fail with a validation error
+-- | Fail with a validation error.
 invalid :: forall err result. err -> V err result
-invalid = Invalid
+invalid = V <<< Left
 
--- | Test whether validation was successful or not
+-- | Test whether validation was successful or not.
 isValid :: forall err result. V err result -> Boolean
-isValid (Valid _) = true
+isValid (V (Right _)) = true
 isValid _ = false
+
+toEither :: forall err result. V err result -> Either err result
+toEither (V e) = e
+
+fromEither :: forall left right. Semigroup left =>
+  Either left right -> V left right
+fromEither = V
 
 derive instance eqV :: (Eq err, Eq result) => Eq (V err result)
 
 derive instance ordV :: (Ord err, Ord result) => Ord (V err result)
 
 instance showV :: (Show err, Show result) => Show (V err result) where
-  show (Invalid err) = "(Invalid " <> show err <> ")"
-  show (Valid result) = "(Valid " <> show result <> ")"
+  show = case _ of
+    V (Left err) -> "invalid (" <> show err <> ")"
+    V (Right result) -> "pure (" <> show result <> ")"
 
-instance functorV :: Functor (V err) where
-  map _ (Invalid err) = Invalid err
-  map f (Valid result) = Valid (f result)
+derive newtype instance functorV :: Functor (V err)
 
-instance bifunctorV :: Bifunctor V where
-  bimap f _ (Invalid err) = Invalid (f err)
-  bimap _ g (Valid result) = Valid (g result)
+derive newtype instance bifunctorV :: Bifunctor V
 
-instance applyV :: (Semigroup err) => Apply (V err) where
-  apply (Invalid err1) (Invalid err2) = Invalid (err1 <> err2)
-  apply (Invalid err) _ = Invalid err
-  apply _ (Invalid err) = Invalid err
-  apply (Valid f) (Valid x) = Valid (f x)
+instance applyV :: Semigroup err => Apply (V err) where
+  apply (V (Left err1)) (V (Left err2)) = V (Left (err1 <> err2))
+  apply (V (Left err)) _ = V (Left err)
+  apply _ (V (Left err)) = V (Left err)
+  apply (V (Right f)) (V (Right x)) = V (Right (f x))
 
-instance applicativeV :: (Semigroup err) => Applicative (V err) where
-  pure = Valid
+instance applicativeV :: Semigroup err => Applicative (V err) where
+  pure = V <<< Right
 
 instance semigroupV :: (Semigroup err, Semigroup a) => Semigroup (V err a) where
   append = lift2 append
@@ -87,5 +93,5 @@ instance foldableV :: Foldable (V err) where
   foldl f b = unV (const b) (f b)
 
 instance traversableV :: Traversable (V err) where
-  sequence = unV (pure <<< Invalid) (map Valid)
-  traverse f = unV (pure <<< Invalid) (map Valid <<< f)
+  sequence = unV (pure <<< V <<< Left) (map (V <<< Right))
+  traverse f = unV (pure <<< V <<< Left) (map (V <<< Right) <<< f)
